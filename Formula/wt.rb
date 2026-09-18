@@ -15,7 +15,7 @@ class Wt < Formula
   on_macos do
     on_arm do
       url "https://github.com/zaratan/wt/releases/download/v#{version}/wt-darwin-arm64.tar.gz"
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "1137285a86f72cb1c9c3ac83ce43a2b8e346f3a507572c60c96d8a1ff527cd08"
     end
   end
 
