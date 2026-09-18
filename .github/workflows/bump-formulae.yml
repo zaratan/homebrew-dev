@@ -1,0 +1,108 @@
+name: Bump formulae
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+
+      - name: Configure git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump outdated formulae
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_BUMP_TOKEN }}
+        run: |
+          set -uo pipefail
+
+          TAP="zaratan/dev"
+          REPO="zaratan/homebrew-dev"
+          TAP_DIR="$(brew --repository)/Library/Taps/${TAP%%/*}/homebrew-${TAP#*/}"
+
+          cd "$TAP_DIR"
+
+          # Use PAT for git push (gh CLI uses GH_TOKEN env var directly)
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+
+          outdated=$(brew livecheck --tap "$TAP" --formula --newer-only --json)
+          echo "Livecheck output: $outdated"
+
+          echo "$outdated" | jq -r '.[] | [.formula, .version.current, .version.latest] | @tsv' | \
+          while IFS=$'\t' read -r formula current latest; do
+            echo "::group::Bumping $formula: $current -> $latest"
+
+            formula_file="Formula/${formula}.rb"
+
+            # Skip if a PR for this exact bump already exists (any state)
+            existing=$(gh pr list --repo "$REPO" --state all \
+              --search "\"${formula} ${latest}\" in:title" --json number --jq 'length')
+            if [ "$existing" != "0" ]; then
+              echo "PR for ${formula} ${latest} already exists, skipping."
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Extract the first non-livecheck url stanza (works for on_macos / on_arm blocks).
+            url_pattern=$(awk '
+              /livecheck do/ { in_lc=1 }
+              /^[[:space:]]*end[[:space:]]*$/ && in_lc { in_lc=0; next }
+              !in_lc && /^[[:space:]]*url[[:space:]]+"/ {
+                match($0, /"[^"]+"/)
+                print substr($0, RSTART+1, RLENGTH-2)
+                exit
+              }
+            ' "$formula_file")
+
+            # Build the real URL by interpolating #{version}
+            url="${url_pattern//\#\{version\}/$latest}"
+            echo "URL: $url"
+
+            # Download streaming and compute SHA256
+            sha=$(curl -sSfL "$url" | shasum -a 256 | awk '{print $1}')
+            if [ -z "$sha" ]; then
+              echo "ERROR: failed to compute sha256, skipping."
+              echo "::endgroup::"
+              continue
+            fi
+            echo "SHA: $sha"
+
+            # Edit the formula file: version + sha256 (range-restricted to the on_macos block
+            # so a future on_intel or resource sha can't be clobbered by accident).
+            sed -i.bak -E "s/^([[:space:]]*version[[:space:]]+)\"${current}\"/\1\"${latest}\"/" "$formula_file"
+            sed -i.bak -E "/on_macos do/,/^[[:space:]]*end[[:space:]]*$/ s/(sha256[[:space:]]+)\"[a-f0-9]{64}\"/\1\"${sha}\"/" "$formula_file"
+            rm -f "${formula_file}.bak"
+
+            if git diff --quiet -- "$formula_file"; then
+              echo "ERROR: no changes after edit, skipping."
+              echo "::endgroup::"
+              continue
+            fi
+
+            branch="bump-${formula}-${latest}"
+            git checkout -b "$branch"
+            git add "$formula_file"
+            git commit -m "${formula} ${latest}"
+            git push -u origin "$branch"
+
+            gh pr create \
+              --repo "$REPO" \
+              --base main \
+              --head "$branch" \
+              --title "${formula} ${latest}" \
+              --body "Automated bump of \`${formula}\` from \`${current}\` to \`${latest}\`."
+
+            git checkout main
+            echo "::endgroup::"
+          done
