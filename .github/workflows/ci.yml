@@ -23,5 +23,9 @@ jobs:
         run: brew style zaratan/dev
 
       - name: brew audit (formulae)
-        run: brew audit --formula --strict --tap zaratan/dev
+        # --except=version: audit_version rejects an explicit `version` that
+        # matches the one it can scan from the url. bump-formulae.yml needs
+        # both — it rewrites the version line and interpolates #{version} into
+        # the url pattern — so the two tools cannot both be satisfied here.
+        run: brew audit --formula --strict --except=version --tap zaratan/dev
 

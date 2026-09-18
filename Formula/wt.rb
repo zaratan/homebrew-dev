@@ -10,7 +10,7 @@ class Wt < Formula
   end
 
   depends_on arch: :arm64
-  depends_on macos: :big_sur
+  depends_on :macos
 
   on_macos do
     on_arm do
