@@ -1,7 +1,7 @@
 class Wt < Formula
   desc "Git worktree manager integrated with herdr"
   homepage "https://github.com/zaratan/wt"
-  version "0.1.2"
+  version "0.2.0"
   license "MIT"
 
   livecheck do
@@ -15,7 +15,7 @@ class Wt < Formula
   on_macos do
     on_arm do
       url "https://github.com/zaratan/wt/releases/download/v#{version}/wt-darwin-arm64.tar.gz"
-      sha256 "c62fd8e0bb0553e3d76a56b6fe22c2fc784ea4cf72c9f900da3047efa3d9879b"
+      sha256 "1ed055243f47d927b7d3f215a15e74798d59d70470fa38ea97518ac727d545af"
     end
   end
 
